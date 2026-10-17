@@ -4,62 +4,65 @@
 # Co-maintainer: bartus <arch-user-repoᘓbartus.33mail.com>
 # Contributor: Adrian Sausenthaler <aur@sausenthaler.de>
 
-#Configuration:
-#Use: makepkg VAR1=0 VAR2=1 to enable(1) disable(0) a feature
-#Use: {yay,paru} --mflags=VAR1=0,VAR2=1
-#Use: aurutils --margs=VAR1=0,VAR2=1
-#Use: VAR1=0 VAR2=1 pamac
-
-# Use FRAGMENT=#{commit,tag,brach}=xxx for bisect build
+# Optional SDKs and libraries are enabled when installed on the build system.
+# Use CUDA_ARCH / HIP_ARCH for a single GPU architecture or a semicolon-separated list.
+# SYCL_ROOT_DIR, CUDA_PATH and HIP_ROOT_DIR override the default SDK locations.
+# ONEAPI_JOBS / HIPRT_JOBS control GPU compiler parallelism (default: 1).
+# Use FRAGMENT='#commit=...' or '#tag=...' to build a particular revision.
 _fragment="${FRAGMENT:-#branch=main}"
-# revert oneapi:2025.3 conflicts
-_git_revert=(49414a72f607ccd15f8b71b81edc9aff040d581e) # v3.1 arch
-
-# Use CUDA_ARCH to build for specific GPU architecture
-# Supports: single arch (sm_52) and list of archs (sm_52;sm_60)
-[[ -v CUDA_ARCH ]] && _CMAKE_FLAGS+=(-DCYCLES_CUDA_BINARIES_ARCH="${CUDA_ARCH}")
-[[ -v HIP_ARCH  ]] && _CMAKE_FLAGS+=(-DCYCLES_HIP_BINARIES_ARCH="${HIP_ARCH}")
 
 pkgname=blender-git
-pkgver=5.3.r163133.gc9dd766ce9c2
+pkgver=5.4.r166331.g3fe0f2ab2a29
 pkgrel=1
 pkgdesc="A fully integrated 3D graphics creation suite (development)"
-arch=('i686' 'x86_64')
+arch=('x86_64')
 url="https://blender.org/"
 options=(!lto)
 depends+=('alembic' 'ceres-solver' 'eigen' 'embree' 'libgl' 'python' 'python-numpy' 'openjpeg2' 'libharu' 'potrace' 'openxr'
           'ffmpeg' 'fftw' 'openal' 'freetype2' 'libxi' 'manifold' 'openimageio' 'opencolorio'
           'openvdb' 'opensubdiv' 'openshadinglanguage' 'libtiff' 'libpng'
-          'python' 'python-zstandard' 'ccache')
-depends+=('libdecor' 'libepoxy')
-optdepends=('cuda: CUDA support in Cycles'
-            'optix8: OptiX support in Cycles >=8.0.0 <9.0.0'
+          'python-zstandard' 'google-glog' 'gflags' 'libsndfile' 'pugixml' 'rubberband')
+depends+=('libdecor' 'libepoxy' 'shaderc' 'opentimelineio')
+optdepends=('cuda: Precompile CUDA kernels for Cycles'
+            'optix8: Build OptiX support in Cycles >=8.0.0 <9.0.0'
             'usd: USD export Scene'
             'openpgl: Intel Path Guiding library in Cycles'
             'openimagedenoise: Intel Open Image Denoise support in compositing'
             'materialx: MaterialX materials'
-            'level-zero-headers: Intel OpenCL FPGA kernels (all four needed)'
-            'intel-compute-runtime: Intel OpenCL FPGA kernels (all four needed)'
-            'intel-oneapi-compiler-shared-runtime: Intel OpenCL FPGA kernels (all four needed)'
-            'intel-oneapi-dpcpp-cpp: Intel OpenCL FPGA kernels (all four needed)'
+            'level-zero-headers: Build Cycles oneAPI support'
+            'intel-compute-runtime: Intel GPU runtime for Cycles oneAPI'
+            'intel-oneapi-compiler-shared-runtime: Cycles oneAPI runtime'
+            'intel-oneapi-dpcpp-cpp: Build Cycles oneAPI kernels'
+            'hip-runtime-amd: Build Cycles HIP kernels'
+            'hiprt: Build Cycles HIP-RT kernels'
             'makepkg-cg: Control resources during compilation')
-makedepends+=('git' 'cmake' 'boost' 'mesa' 'llvm' 'clang' 'subversion' 'ninja' 'mold')
+
+# These libraries are optional at build time, but required by binaries built with them.
+for _optional_pkg in usd openpgl openimagedenoise materialx; do
+  if pacman -Qq "$_optional_pkg" &>/dev/null; then
+    depends+=("$_optional_pkg")
+  fi
+done
+unset _optional_pkg
+
+makedepends+=('git' 'cmake' 'boost' 'mesa' 'llvm' 'clang' 'subversion' 'ninja' 'mold' 'ccache' 'opencl-headers')
 makedepends+=('wayland-protocols')
 makedepends+=('cython')
-makedepends+=('vulkan-headers')
+makedepends+=('vulkan-headers' 'spirv-headers')
 makedepends+=('makepkg-git-lfs-proto') # provides /usr/share/makepkg/source/git-lfs.sh (download_git-lfs, extract_git-lfs)
 provides=('blender')
 conflicts=('blender')
 license=('GPL')
 source=("blender::git-lfs+https://projects.blender.org/blender/blender${_fragment}"
-        blender-fix-oneapi-2026.patch::https://raw.githubusercontent.com/intel/llvm/20a7095cba72ace59f7c8a64711ec4b51f01f030/devops/actions/blender/blender-build/patches/Fix-build.patch
+        'blender-fix-otio-namespace.patch'  # `extra/opentimelineio` is currently outdated compared to Blender's version . `aur/opentimelineio-git` is orphaned. So a patch is the best choice.
   )
 sha256sums=('SKIP'
-            '154d89a0187476265f3d29fbc3ec696c0e293e27f75a4c633ea81393ab9a1ae2'
+            '7c8fbc2e429aa8e803d0c290ab8b20679f00288ba8415d5f46645cff85572e29'
   )
 
 pkgver() {
-  blender_version=$(grep -Po "BLENDER_VERSION \K[0-9]{3}" "$srcdir"/blender/source/blender/blenkernel/BKE_blender_version.h)
+  local blender_version
+  blender_version=$(grep -Po "^#define BLENDER_VERSION \K[0-9]+" "$srcdir"/blender/source/blender/blenkernel/BKE_blender_version.h)
   printf "%d.%d.r%s.g%s" \
     $((blender_version/100)) \
     $((blender_version%100)) \
@@ -68,90 +71,126 @@ pkgver() {
 }
 
 prepare() {
-  mapfile -t patches < <(grep -Po '^.*?(patch|diff)(?=::|$)' < <(printf "${srcdir}/%s\n" ${source[@]}))
-  for patch in "${patches[@]}"; do
-    msg2  "apply ${patch##*/}..."
-    git -C "${srcdir}"/blender apply -v "${patches[@]}"
+  local patch
+  for patch in "${source[@]}"; do
+    patch=${patch%%::*}
+    case "$patch" in
+      *.patch|*.diff)
+        patch="$srcdir/${patch##*/}"
+        if git -C "$srcdir/blender" apply --reverse --check "$patch" &>/dev/null; then
+          msg2 "${patch##*/} already applied"
+        else
+          msg2 "apply ${patch##*/}..."
+          git -C "$srcdir/blender" apply -v "$patch" || return
+        fi
+        ;;
+    esac
   done
-  if [ -v _git_revert ]; then
-  msg2  "revert ${_git_revert[@]}..."
-  [[ -v _git_revert ]] && git -C "${srcdir}"/blender revert --no-commit -Xours "${_git_revert[@]}" || git -C "${srcdir}"/blender revert --abort
-  fi
-# remove deprecated headers in rocm:7
-  sed -e '/Geometry.h/d' -e '/Scene.h/d' -i "$srcdir"/blender/intern/cycles/kernel/CMakeLists.txt
 }
 
 build() {
+  local _pyver _pkg _option _enabled _sycl_root _candidate
+  local _sycl_compiler=''
+  local _cuda_root=${CUDA_PATH:-/opt/cuda}
+  local _hip_root=${HIP_ROOT_DIR:-/opt/rocm}
+  local -a _CMAKE_FLAGS=() _makeflags=()
   _pyver=$(python -c "from sys import version_info; print(\"%d.%d\" % (version_info[0],version_info[1]))")
   msg "python version detected: ${_pyver}"
 
+  # Start with official defaults and override individual options later
+  _CMAKE_FLAGS+=( -C "${srcdir}/blender/build_files/cmake/config/blender_release.cmake"
+                  -G Ninja
+                  -DCMAKE_INSTALL_PREFIX=/usr
+                  -DCMAKE_INSTALL_PREFIX_WITH_CONFIG=/usr
+                  -DWITH_LINKER_MOLD=ON
+                  -DCMAKE_SKIP_INSTALL_RPATH=ON
+                  -DCMAKE_SKIP_BUILD_RPATH=ON
+                  -DCMAKE_BUILD_TYPE=Release
+                  -DWITH_INSTALL_PORTABLE=OFF
+                  -DWITH_LIBS_PRECOMPILED=OFF
+                  -DWITH_STATIC_LIBS=OFF
+                  -DWITH_CYCLES_HYDRA_RENDER_DELEGATE=OFF
+                  -DXR_OPENXR_SDK_ROOT_DIR=/usr
+                  -DWITH_DOC_MANPAGE=OFF
+                  -DWITH_SYSTEM_GLOG=ON
+                  -DWITH_SYSTEM_GFLAGS=ON
+                  )
+
+  # Python config to build against system Python
   _CMAKE_FLAGS+=( -DPYTHON_VERSION=$_pyver
-                  -DPYTHON_LIBRARY=/usr/lib/libpython${_pyver}.so
+                  -DPYTHON_LIBRARY="/usr/lib/libpython${_pyver}.so"
+                  -DPYTHON_ROOT_DIR=/usr
+                  -DPYTHON_EXECUTABLE="/usr/bin/python${_pyver}"
+                  -DPYTHON_INCLUDE_DIR="/usr/include/python${_pyver}"
+                  -DPYTHON_INCLUDE_CONFIG_DIR="/usr/include/python${_pyver}"
+                  -DPYTHON_LIBPATH=/usr/lib
                   -DWITH_PYTHON_INSTALL=OFF
                   -DWITH_PYTHON_SAFETY=OFF )
 
 
-  # check for oneapi
-  export _ONEAPI_CLANG=/opt/intel/oneapi/compiler/latest/bin/compiler/clang
-  export _ONEAPI_CLANGXX=/opt/intel/oneapi/compiler/latest/bin/compiler/clang++
-  if [ -f "$_ONEAPI_CLANG" ]; then
+  # Use the compiler layout of both current and older oneAPI installations.
+  _sycl_root=${SYCL_ROOT_DIR:-/opt/intel/oneapi/compiler/latest}
+  for _candidate in bin/icpx bin/dpcpp bin/clang++ bin/compiler/clang++ linux/bin/dpcpp; do
+    if [[ -x "$_sycl_root/$_candidate" ]]; then
+      _sycl_compiler="$_sycl_root/$_candidate"
+      [[ $_candidate == linux/* ]] && _sycl_root+=/linux
+      break
+    fi
+  done
+  if [[ -n $_sycl_compiler ]]; then
     _CMAKE_FLAGS+=( -DWITH_CYCLES_DEVICE_ONEAPI=ON
                     -DWITH_CYCLES_ONEAPI_BINARIES=ON
-                    -DWITH_CLANG=ON
-                    -DSYCL_CPP_FLAGS="--verbose"  # for debugging
+                    -DSYCL_COMPILER="$_sycl_compiler"
+                    -DSYCL_ROOT_DIR="$_sycl_root"
                     -DOCLOC_INSTALL_DIR=/usr
-                    -DSYCL_ROOT_DIR=/opt/intel/oneapi/compiler/latest/
-                    -DSYCL_OFFLINE_COMPILER_PARALLEL_JOBS=$(nproc)
-                  )
+                    -DIGC_INSTALL_DIR=/usr
+                    -DSYCL_OFFLINE_COMPILER_PARALLEL_JOBS="${ONEAPI_JOBS:-1}" )
+    # CMake validates SYCL, Level Zero and ocloc; missing ocloc falls back to JIT.
   else
-    # Because some defaults are ON.
     _CMAKE_FLAGS+=( -DWITH_CYCLES_DEVICE_ONEAPI=OFF
                     -DWITH_CYCLES_ONEAPI_BINARIES=OFF )
   fi
 
-  # determine whether we can precompile CUDA kernels
-  _CUDA_PKG=$(pacman -Qq cuda 2>/dev/null) || true
-  if [ "$_CUDA_PKG" != "" ]; then
-    export CUDAHOSTCXX="$NVCC_CCBIN" # defined in /etc/profile.d/cuda.sh
-    # https://wiki.blender.org/wiki/Building_Blender/GPU_Binaries
+  # The runtime CUDA backend also works without the CUDA build toolkit.
+  if [[ -x "$_cuda_root/bin/nvcc" ]]; then
     _CMAKE_FLAGS+=( -DWITH_CYCLES_CUDA_BINARIES=ON
                     -DWITH_COMPILER_ASAN=OFF
-                    -DCMAKE_CUDA_HOST_COMPILER=${NVCC_CCBIN} ) # defined in /etc/profile.d/cuda.sh
+                    -DCUDA_TOOLKIT_ROOT_DIR="$_cuda_root"
+                    -DCUDA_NVCC_EXECUTABLE="$_cuda_root/bin/nvcc"
+                    -DCUDA_HOST_COMPILER="${NVCC_CCBIN:-/usr/bin/g++}" )
+  else
+    _CMAKE_FLAGS+=( -DWITH_CYCLES_CUDA_BINARIES=OFF )
   fi
 
-  # check for materialx
-  _MX_PKG=$(pacman -Qq materialx 2>/dev/null) || true
-  if [ "$_MX_PKG" != "" ]; then
-    _CMAKE_FLAGS+=( -DWITH_MATERIALX=ON )
+  while read -r _pkg _option; do
+    _enabled=OFF
+    pacman -Qq "$_pkg" &>/dev/null && _enabled=ON
+    _CMAKE_FLAGS+=( "-D${_option}=${_enabled}" )
+  done <<'OPTIONAL_LIBRARIES'
+materialx WITH_MATERIALX
+usd WITH_USD
+openimagedenoise WITH_OPENIMAGEDENOISE
+openpgl WITH_CYCLES_PATH_GUIDING
+OPTIONAL_LIBRARIES
+
+  if pacman -Qq optix8 &>/dev/null && [[ -f /opt/optix/include/optix.h ]]; then
+    _CMAKE_FLAGS+=( -DWITH_CYCLES_DEVICE_OPTIX=ON -DOPTIX_ROOT_DIR=/opt/optix )
+  else
+    _CMAKE_FLAGS+=( -DWITH_CYCLES_DEVICE_OPTIX=OFF )
   fi
 
-  _USD_PKG=$(pacman -Qq usd 2>/dev/null) || true
-  if [ "$_USD_PKG" != "" ]; then
-    _CMAKE_FLAGS+=( -DWITH_USD=ON )
-  fi
-
-  # check for optix
-  _OPTIX_PKG=$(pacman -Qq optix8 2>/dev/null) || true
-  if [ "$_OPTIX_PKG" != "" ]; then
-      _CMAKE_FLAGS+=( -DWITH_CYCLES_DEVICE_OPTIX=ON
-                      -DOPTIX_ROOT_DIR=/opt/optix )
-  fi
-
-  # check for open image denoise
-  _OIDN_PKG=$(pacman -Qq openimagedenoise 2>/dev/null) || true
-  if [ "$_OIDN_PKG" != "" ]; then
-      _CMAKE_FLAGS+=( -DWITH_OPENIMAGEDENOISE=ON )
-  fi
-
-  if [ -d /opt/rocm/bin ]; then
+  # AMD
+  if [[ -x "$_hip_root/bin/hipcc" ]]; then
       _CMAKE_FLAGS+=( -DWITH_CYCLES_HIP_BINARIES=ON
                       -DWITH_CYCLES_DEVICE_HIP=ON
-                      -DWITH_CYCLES_DEVICE_HIPRT=ON
-                      -DHIP_ROOT_DIR=/opt/rocm
-                      -DHIPRT_INCLUDE_DIR=/opt/rocm/include
-                      -DHIPRT_COMPILER_PARALLEL_JOBS=$(nproc)
-                      -DWITH_CYCLES_HYDRA_RENDER_DELEGATE=OFF
+                      -DHIP_ROOT_DIR="$_hip_root"
+                      -DHIPRT_COMPILER_PARALLEL_JOBS="${HIPRT_JOBS:-1}"
                     )
+      if [[ -f "$_hip_root/include/hiprt/hiprt.h" ]]; then
+        _CMAKE_FLAGS+=( -DWITH_CYCLES_DEVICE_HIPRT=ON -DHIPRT_ROOT_DIR="$_hip_root" )
+      else
+        _CMAKE_FLAGS+=( -DWITH_CYCLES_DEVICE_HIPRT=OFF )
+      fi
   else
       # Because some defaults are ON.
       _CMAKE_FLAGS+=( -DWITH_CYCLES_HIP_BINARIES=OFF
@@ -160,56 +199,44 @@ build() {
                     )
   fi
 
-  #default cmake flags
-  _CMAKE_FLAGS+=(
-                -C "${srcdir}/blender/build_files/cmake/config/blender_release.cmake"
-                -G Ninja
-                -DCMAKE_INSTALL_PREFIX=/usr
-                -DCMAKE_INSTALL_PREFIX_WITH_CONFIG="${pkgdir}/usr"
-                -DWITH_LINKER_MOLD=ON
-                -DCMAKE_SKIP_INSTALL_RPATH=ON
-                -DCMAKE_SKIP_BUILD_RPATH=ON
-                -DCMAKE_BUILD_TYPE=Release
-                -DWITH_INSTALL_PORTABLE=OFF
-                -DWITH_LIBS_PRECOMPILED=OFF
-                -DWITH_STATIC_LIBS=OFF
-                -DXR_OPENXR_SDK_ROOT_DIR=/usr
-                -DPYTHON_VERSION="${_pyver}"
-  )
+  # Apply architecture overrides after the release preset, which uses FORCE.
+  [[ -v CUDA_ARCH ]] && _CMAKE_FLAGS+=( -DCYCLES_CUDA_BINARIES_ARCH="$CUDA_ARCH" )
+  [[ -v HIP_ARCH ]] && _CMAKE_FLAGS+=( -DCYCLES_HIP_BINARIES_ARCH="$HIP_ARCH" )
 
-
-  USING_MAKEPKG_CG="$(systemctl --user -t slice | grep -o makepkg-cg-`id -u`-'[[:digit:]]\+'.slice'[[:space:]]\+'loaded'[[:space:]]\+'active)" || true
-  MAKEPKG_CG_WARNING=\
-'If you use systemd, consider trying `makepkg-cg`.
-This build is otherwise very likely to use more RAM than
-the system has, especially with a high `-j`!'
-  [[ -z "$USING_MAKEPKG_CG" ]] && warning "$MAKEPKG_CG_WARNING"
-  cmake -S blender -B build -G Ninja "${_CMAKE_FLAGS[@]}"
-  cmake --build build ${MAKEFLAGS:--j1}
+  cmake -S "$srcdir/blender" -B "$srcdir/build" "${_CMAKE_FLAGS[@]}" || return
+  # MAKEFLAGS may contain Ninja options such as -j and -l; pass them to Ninja.
+  read -r -a _makeflags <<< "${MAKEFLAGS:--j1}"
+  cmake --build "$srcdir/build" -- "${_makeflags[@]}"
 }
 
 package() {
-  _suffix=${pkgver%%.r*}
-  sed -e 's/\(file(INSTALL\)\(.*blender\.1"\))/#\1\2)/' \
-      -e 's|/usr/lib/python/|/usr/lib64/python3.13/|g' \
-      -i "$srcdir"/build/source/creator/cmake_install.cmake
-  BLENDER_SYSTEM_RESOURCES="${pkgdir}/usr/share/blender/${_suffix}" DESTDIR="${pkgdir}" cmake --install build
+  local _suffix=${pkgver%%.r*} _oneapi_lib
+  local -a _kernels=()
+  BLENDER_SYSTEM_RESOURCES="${pkgdir}/usr/share/blender/${_suffix}" \
+    DESTDIR="$pkgdir" cmake --install "$srcdir/build" || return
 
-  cd blender
-  install -Dm755 release/bin/blender-softwaregl "${pkgdir}/usr/bin/blender-softwaregl" || true
+  cd "$srcdir/blender" || return
+  install -Dm755 release/bin/blender-launcher "${pkgdir}/usr/bin/blender-launcher"
   install -Dm644 release/freedesktop/org.blender.Blender.metainfo.xml "${pkgdir}/usr/share/metainfo/org.blender.Blender.metainfo.xml"
   install -vDm 644 doc/license/{BSD-{2,3}-Clause,MIT,Zlib}-license.txt -t "$pkgdir/usr/share/licenses/blender/"
 
   python -m compileall "${pkgdir}/usr/share/blender"
   python -O -m compileall "${pkgdir}/usr/share/blender"
 
-  # Move OneAPI AOT lib to proper place
-  mkdir "${pkgdir}"/usr/lib/
-  mv "${pkgdir}"/usr/share/blender/lib/libcycles_kernel_oneapi_aot.so "${pkgdir}"/usr/lib/ || warning "OneAPI missing from the build!"
+  # Both AOT and JIT builds link this library into Blender.
+  for _oneapi_lib in "$pkgdir"/usr/share/blender/lib/libcycles_kernel_oneapi_{aot,jit}.so; do
+    if [[ -f $_oneapi_lib ]]; then
+      install -d "$pkgdir/usr/lib"
+      mv "$_oneapi_lib" "$pkgdir/usr/lib/" || return
+    fi
+  done
 
-  if [[ -e "$pkgdir/usr/share/blender/${_suffix}/scripts/addons/cycles/lib/" ]] ; then
-    # make sure the cuda kernels are not stripped
-    chmod 444 "$pkgdir"/usr/share/blender/${_suffix}/scripts/addons/cycles/lib/*
+  # GPU kernel files are data; makepkg must not strip them.
+  shopt -s nullglob
+  _kernels=("$pkgdir/usr/share/blender/$_suffix/scripts/addons_core/cycles/lib/"*)
+  shopt -u nullglob
+  if (( ${#_kernels[@]} )); then
+    chmod 444 "${_kernels[@]}"
   fi
 }
 

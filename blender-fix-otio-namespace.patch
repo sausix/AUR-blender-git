@@ -1,0 +1,132 @@
+diff --git a/source/blender/io/otio/exporter/otio_export.cc b/source/blender/io/otio/exporter/otio_export.cc
+index d769e9a85e7d..f838b6787980 100644
+--- a/source/blender/io/otio/exporter/otio_export.cc
++++ b/source/blender/io/otio/exporter/otio_export.cc
+@@ -552,9 +552,14 @@ static Tracks export_strips(StripExportContext &ctx,
+ 
+ static void export_markers(const StripExportContext &ctx, const int origin, Stack &stack)
+ {
++#ifdef OPENTIMELINEIO_VERSION_NS
++  const auto &marker_color = Color::white;
++#else
++  const auto &marker_color = Marker::Color::white;
++#endif
+   for (const TimeMarker &marker : ctx.scene->markers) {
+     stack.markers().push_back(
+-        new Marker(marker.name, frame_range(ctx, marker.frame - origin, 1), Color::white));
++        new Marker(marker.name, frame_range(ctx, marker.frame - origin, 1), marker_color));
+   }
+ }
+ 
+@@ -593,7 +598,7 @@ void exporter_main(bContext *C, const OTIOExportParams &params)
+     resolve_add_timeline_metadata(*timeline);
+   }
+ 
+-  opentimelineio::OPENTIMELINEIO_VERSION_NS::ErrorStatus error_status;
++  OTIO_NS::ErrorStatus error_status;
+   /* Some versions of editors like DaVinci Resolve will abort import of the entire timeline if
+    * there is at least one newer Marker.3 object; for better compatibility, write older schema
+    * instead. */
+diff --git a/source/blender/io/otio/exporter/otio_export_resolve.hh b/source/blender/io/otio/exporter/otio_export_resolve.hh
+index a42d9e652a13..b99367a766fc 100644
+--- a/source/blender/io/otio/exporter/otio_export_resolve.hh
++++ b/source/blender/io/otio/exporter/otio_export_resolve.hh
+@@ -23,7 +23,7 @@ struct Scene;
+ }  // namespace blender
+ 
+ namespace blender::io::otio {
+-using namespace opentimelineio::OPENTIMELINEIO_VERSION_NS;
++using namespace OTIO_NS;
+ 
+ GeneratorReference *resolve_generator_reference(const Strip &strip,
+                                                 const TimeRange &available_range);
+diff --git a/source/blender/io/otio/importer/otio_import.cc b/source/blender/io/otio/importer/otio_import.cc
+index ff50a84f6da5..867da2ed2f76 100644
+--- a/source/blender/io/otio/importer/otio_import.cc
++++ b/source/blender/io/otio/importer/otio_import.cc
+@@ -531,7 +531,7 @@ static void workaround_marker_v2_upgrade(serialize::Value &value)
+  * reading it directly when Blender's JSON parser can't handle the file.
+  */
+ SerializableObject *read_otio_file_with_workarounds(
+-    const char *filepath, opentimelineio::OPENTIMELINEIO_VERSION_NS::ErrorStatus *error_status)
++    const char *filepath, OTIO_NS::ErrorStatus *error_status)
+ {
+   const std::shared_ptr<serialize::Value> value = serialize::read_json_file(filepath);
+   if (!value) {
+@@ -556,7 +556,7 @@ static Scene *import_scene(bContext *C, const std::string &name)
+ 
+ Scene *importer_main(bContext *C, const OTIOImportParams &params)
+ {
+-  opentimelineio::OPENTIMELINEIO_VERSION_NS::ErrorStatus error_status;
++  OTIO_NS::ErrorStatus error_status;
+   SerializableObject::Retainer<SerializableObject> object(
+       read_otio_file_with_workarounds(params.filepath, &error_status));
+   auto *timeline = dynamic_cast<Timeline *>(object.value);
+diff --git a/source/blender/io/otio/importer/otio_import.hh b/source/blender/io/otio/importer/otio_import.hh
+index 39c9e32f9581..0753ba7140e8 100644
+--- a/source/blender/io/otio/importer/otio_import.hh
++++ b/source/blender/io/otio/importer/otio_import.hh
+@@ -20,9 +20,9 @@ struct Scene;
+ namespace io::otio {
+ 
+ Scene *importer_main(bContext *C, const OTIOImportParams &params);
+-opentimelineio::OPENTIMELINEIO_VERSION_NS::SerializableObject *read_otio_file_with_workarounds(
++OTIO_NS::SerializableObject *read_otio_file_with_workarounds(
+     const char *filepath,
+-    opentimelineio::OPENTIMELINEIO_VERSION_NS::ErrorStatus *error_status = nullptr);
++    OTIO_NS::ErrorStatus *error_status = nullptr);
+ 
+ }  // namespace io::otio
+ }  // namespace blender
+diff --git a/source/blender/io/otio/importer/otio_import_kdenlive.hh b/source/blender/io/otio/importer/otio_import_kdenlive.hh
+index c6bd3a175aa5..a1c294973c3e 100644
+--- a/source/blender/io/otio/importer/otio_import_kdenlive.hh
++++ b/source/blender/io/otio/importer/otio_import_kdenlive.hh
+@@ -15,7 +15,7 @@
+ #include "opentimelineio/generatorReference.h"
+ 
+ namespace blender::io::otio {
+-using namespace opentimelineio::OPENTIMELINEIO_VERSION_NS;
++using namespace OTIO_NS;
+ 
+ std::optional<StripType> kdenlive_generator_type(const GeneratorReference &generator);
+ AnyDictionary kdenlive_strip_properties(SerializableObjectWithMetadata &object);
+diff --git a/source/blender/io/otio/importer/otio_import_resolve.hh b/source/blender/io/otio/importer/otio_import_resolve.hh
+index 32b86f14db4a..c94caeac683f 100644
+--- a/source/blender/io/otio/importer/otio_import_resolve.hh
++++ b/source/blender/io/otio/importer/otio_import_resolve.hh
+@@ -27,7 +27,7 @@ struct Scene;
+ }  // namespace blender
+ 
+ namespace blender::io::otio {
+-using namespace opentimelineio::OPENTIMELINEIO_VERSION_NS;
++using namespace OTIO_NS;
+ 
+ std::optional<StripType> resolve_generator_type(const GeneratorReference &generator);
+ bool resolve_is_adjustment_clip(Clip &clip);
+diff --git a/source/blender/io/otio/intern/otio_metadata.hh b/source/blender/io/otio/intern/otio_metadata.hh
+index 1a580df9b204..69986be48fd5 100644
+--- a/source/blender/io/otio/intern/otio_metadata.hh
++++ b/source/blender/io/otio/intern/otio_metadata.hh
+@@ -18,7 +18,7 @@ struct PointerRNA;
+ }  // namespace blender
+ 
+ namespace blender::io::otio {
+-using namespace opentimelineio::OPENTIMELINEIO_VERSION_NS;
++using namespace OTIO_NS;
+ 
+ std::optional<double> to_number(const std::any &value);
+ const std::any *find(const AnyDictionary &dictionary, const std::string &key);
+diff --git a/source/blender/io/otio/intern/otio_resolve.hh b/source/blender/io/otio/intern/otio_resolve.hh
+index f59f08681b6b..65d665332b3b 100644
+--- a/source/blender/io/otio/intern/otio_resolve.hh
++++ b/source/blender/io/otio/intern/otio_resolve.hh
+@@ -22,7 +22,7 @@ struct Strip;
+ }  // namespace blender
+ 
+ namespace blender::io::otio {
+-using namespace opentimelineio::OPENTIMELINEIO_VERSION_NS;
++using namespace OTIO_NS;
+ 
+ enum class ResolveUnit {
+   None,
